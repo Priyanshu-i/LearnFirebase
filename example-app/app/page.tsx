@@ -1,26 +1,98 @@
 // app/page.tsx
-"use client"; // needed since we use client-side Firebase SDK
+"use client"; // required for client-side Firebase SDK usage
 
 import { useState, useEffect } from "react";
 import { signInWithGoogle, logout } from "../lib/auth";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth, firestore } from "../lib/firebase";
-import { collection, addDoc, getDocs } from "firebase/firestore";
+import {
+  collection,
+  addDoc,
+  getDocs,
+  doc,
+  updateDoc,
+  deleteDoc,
+} from "firebase/firestore";
 
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
-  const [data, setData] = useState<any[]>([]);
+  const [items, setItems] = useState<any[]>([]);
   const [newItem, setNewItem] = useState("");
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
 
-  // Monitor auth state
+  // Monitor authentication state
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
+    const unsubscribe = onAuthStateChanged(auth, (usr) => {
+      setUser(usr);
+      if (usr) {
+        fetchItems(usr.uid);
+      } else {
+        setItems([]);
+      }
     });
     return () => unsubscribe();
   }, []);
 
-  // Function to handle sign in
+  // Helper: get reference to the user's items subcollection
+  const userItemsCollection = (uid: string) =>
+    collection(firestore, "users", uid, "items");
+
+  // Create: Add an item for the current user
+  const addItem = async () => {
+    if (!user) return;
+    try {
+      await addDoc(userItemsCollection(user.uid), {
+        text: newItem,
+        createdAt: new Date(),
+      });
+      setNewItem("");
+      fetchItems(user.uid);
+    } catch (e) {
+      console.error("Error adding document: ", e);
+    }
+  };
+
+  // Read: Fetch items for the current user
+  const fetchItems = async (uid: string) => {
+    try {
+      const querySnapshot = await getDocs(userItemsCollection(uid));
+      const fetchedItems: any[] = [];
+      querySnapshot.forEach((doc) => {
+        fetchedItems.push({ id: doc.id, ...doc.data() });
+      });
+      setItems(fetchedItems);
+    } catch (error) {
+      console.error("Error fetching documents: ", error);
+    }
+  };
+
+  // Update: Update an existing item
+  const updateItem = async (id: string) => {
+    if (!user) return;
+    try {
+      const docRef = doc(firestore, "users", user.uid, "items", id);
+      await updateDoc(docRef, { text: editText });
+      setEditId(null);
+      setEditText("");
+      fetchItems(user.uid);
+    } catch (error) {
+      console.error("Error updating document: ", error);
+    }
+  };
+
+  // Delete: Remove an item
+  const deleteItem = async (id: string) => {
+    if (!user) return;
+    try {
+      const docRef = doc(firestore, "users", user.uid, "items", id);
+      await deleteDoc(docRef);
+      fetchItems(user.uid);
+    } catch (error) {
+      console.error("Error deleting document: ", error);
+    }
+  };
+
   const handleSignIn = async () => {
     try {
       await signInWithGoogle();
@@ -29,44 +101,11 @@ export default function Home() {
     }
   };
 
-  // Function to handle sign out
   const handleSignOut = async () => {
     try {
       await logout();
     } catch (error) {
       console.error(error);
-    }
-  };
-
-  // Function to add an item to Firestore
-  const addItem = async () => {
-    if (!user) return;
-    try {
-      const docRef = await addDoc(collection(firestore, "items"), {
-        uid: user.uid,
-        text: newItem,
-        createdAt: new Date(),
-      });
-      console.log("Document written with ID: ", docRef.id);
-      setNewItem("");
-      fetchItems();
-    } catch (e) {
-      console.error("Error adding document: ", e);
-    }
-  };
-
-  // Function to fetch items from Firestore
-  const fetchItems = async () => {
-    if (!user) return;
-    try {
-      const querySnapshot = await getDocs(collection(firestore, "items"));
-      const items: any[] = [];
-      querySnapshot.forEach((doc) => {
-        items.push({ id: doc.id, ...doc.data() });
-      });
-      setData(items);
-    } catch (error) {
-      console.error("Error fetching documents: ", error);
     }
   };
 
@@ -86,19 +125,37 @@ export default function Home() {
           />
           <button onClick={addItem}>Add Item</button>
           <hr />
-          <h2>Items from Firestore</h2>
-          <button onClick={fetchItems}>Fetch Items</button>
+          <h2>Your Items</h2>
           <ul>
-            {data.map((item) => (
-              <li key={item.id}>
-                {item.text} - {item.uid}
+            {items.map((item) => (
+              <li key={item.id} style={{ marginBottom: "1rem" }}>
+                {editId === item.id ? (
+                  <>
+                    <input
+                      type="text"
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                    />
+                    <button onClick={() => updateItem(item.id)}>Save</button>
+                    <button onClick={() => setEditId(null)}>Cancel</button>
+                  </>
+                ) : (
+                  <>
+                    <span>{item.text}</span>{" "}
+                    <button onClick={() => {
+                      setEditId(item.id);
+                      setEditText(item.text);
+                    }}>Edit</button>
+                    <button onClick={() => deleteItem(item.id)}>Delete</button>
+                  </>
+                )}
               </li>
             ))}
           </ul>
         </>
       ) : (
         <>
-          <p>Please sign in to get started.</p>
+          <p>Please sign in to access your data.</p>
           <button onClick={handleSignIn}>Sign In with Google</button>
         </>
       )}
