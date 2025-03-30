@@ -13,10 +13,15 @@ import {
   updateDoc,
   deleteDoc,
 } from "firebase/firestore";
+type Item = {
+  id: string;
+  text: string;
+};
 
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
-  const [items, setItems] = useState<any[]>([]);
+  const [items, setItems] = useState<Item[]>([]);
+
   const [newItem, setNewItem] = useState("");
   const [editId, setEditId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
@@ -57,9 +62,9 @@ export default function Home() {
   const fetchItems = async (uid: string) => {
     try {
       const querySnapshot = await getDocs(userItemsCollection(uid));
-      const fetchedItems: any[] = [];
+      const fetchedItems: Item[] = [];
       querySnapshot.forEach((doc) => {
-        fetchedItems.push({ id: doc.id, ...doc.data() });
+        fetchedItems.push({ id: doc.id, ...(doc.data() as Item) });
       });
       setItems(fetchedItems);
     } catch (error) {
